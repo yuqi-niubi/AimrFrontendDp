@@ -1,0 +1,252 @@
+<html>
+<head>
+<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+<meta http-equiv="content-type" content="text/html; charset=UTF-8"/>
+<title>町・字・丁目レベルの境界線描画</title>
+<style>
+	html, body { height: 100%; width: 100%; font-family: "meiryo UI","Segoe UI",sans-serif;}
+	html{ overflow-y:scroll; }
+	body { margin:0;font-size:12px; }
+	small{ color:#777; }
+	.off{ display:none; }
+	h1{ margin:0; padding:7px 15px; font-size:14px; border-bottom:2px solid #ccc; background-color:#333; color:#ccc; }
+	#container{ margin:10px; }
+	table{ font-size:12px; }
+	#infowin{ width:200px;)
+	/*
+	table{ font-size:12px; border:1px solid #ccc; }
+	table th{ background-color:#e0e0e0; border:1px solid #ccc; text-align:center; }
+	table td{ border:1px solid #ccc; text-align:center; }
+	*/
+</style>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.4/jquery.min.js"></script>
+<script type="text/javascript" src="http://www.google.com/jsapi"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAGTS_UdRkea2iQ77TzGilbYUmyiGDSUeg"></script>
+<script type="text/javascript" src="getCoords.js"></script>
+<!-- 政令指定都市の定義ファイル -->
+<script type="text/javascript" src="/web/GoogleMap/V3/myMap/files/seirei.js"></script>
+<script>
+
+var map;
+//var marker;
+var markers = new Array();
+var infoWindow;
+var bounds;
+var adminArea;
+var adminLine;
+var sArea;	// ポリゴン格納　（削除用）
+var sLine;	// ポリライン格納（削除用）
+
+var currentInfoWindow = null;   //最後に開いた情報ウィンドウ
+var gProp    = new Array();
+var geocoder;
+var geoWindow;
+
+$(document).ready(function(){
+	initialize();
+	setPref();
+});
+
+function initialize() {
+  //var myLatLng = new google.maps.LatLng(35.7873194, 140.029875);	//白井市
+  var myLatLng = new google.maps.LatLng(38.38095993790538,140.27592658996582);	//寒河江市
+	geoWindow    = new google.maps.InfoWindow();
+  geocoder     = new google.maps.Geocoder();
+
+  var mapOptions = {
+    zoom: 10,
+    center: myLatLng,
+    mapTypeId: google.maps.MapTypeId.ROADMAP
+  };
+
+  map = new google.maps.Map($('#map_canvas').get(0), mapOptions);
+  google.maps.event.addListener(map, 'click', codeLatLng);
+}
+function codeLatLng(event) {
+  var lat = event.latLng.lat();
+  var lng = event.latLng.lng();
+  var latlng = new google.maps.LatLng(lat, lng);
+  
+  geocoder.geocode({'latLng': latlng}, function(results, status) {
+    if (status == google.maps.GeocoderStatus.OK) {
+      if (results[0]) {
+      	infoClose();
+        geoWindow.setContent(results[0].formatted_address);
+        geoWindow.setPosition(event.latLng);
+        geoWindow.open(map);
+        currentInfoWindow = geoWindow;
+      } else {
+        alert("No results found");
+      }
+    } else {
+      alert("Geocoder failed due to: " + status);
+    }
+  });
+  
+}
+
+function loadGPS(){
+	clear();
+	sArea = new Array();
+	sLine = new Array();
+	$("#info").html('');
+  // 境界の設定	
+	bounds = new google.maps.LatLngBounds();
+	var polyCoords = new Array();
+	for (var i = 0; i < bdCoords.length; i++) {
+		var polyCoords = new Array();
+		for (var j = 0; j < bdCoords[i].length; j++) {
+			var latlng = new google.maps.LatLng( bdCoords[i][j][0], bdCoords[i][j][1] );
+			polyCoords[j] = latlng;
+			bounds.extend(latlng);
+		}
+		dispPoly(polyCoords);
+	}
+	//console.log(gProp);
+	for(var i = 0; i < gProp.length; i++){
+	  var myLatLng = new google.maps.LatLng(gProp[i]["緯度"],gProp[i]["経度"]);	//中心地点の座標
+	  var marker = new google.maps.Marker({
+	      position: myLatLng,
+	      map: map,
+	      title: gProp[i]["ID"] + " : " + gProp[i]["市町村"] + gProp[i]["町名"]
+	  });
+		// 情報ウィンドウのタイトル編集
+	  var ttl = showInContentWindow(i);
+	  setMarkerListener(marker, ttl);
+	  markers.push(marker);
+	} 
+}
+// 情報ウインドウの生成とクリックイベント関数の登録処理  
+function setMarkerListener(marker, title) {  
+  // 情報ウィンドウの生成  
+  var infoWindow = new google.maps.InfoWindow({  
+      content: title,  
+      maxWidth: 200  
+  });  
+  // マーカーのクリックイベントの関数登録  
+  google.maps.event.addListener(marker, 'click', function(event) {  
+		infoClose();
+    // 情報ウィンドウの表示  
+    infoWindow.open(map, marker);
+   	currentInfoWindow = infoWindow;
+  });  
+}  
+// 情報ウィンドウのタイトル編集処理
+function showInContentWindow(i) {
+	//alert(i);
+	var html = '<div id="infowin"><table>';
+	html += '<tr><td colspan="2">'    + gProp[i]["市町村"] + gProp[i]["町名"] + '</td></tr>';
+	html += '<tr><td>コード</td><td>' + gProp[i]["コード"] + '</td></tr>';
+	html += '<tr><td>緯度</td><td>'   + gProp[i]["緯度"]   + '</td></tr>';
+	html += '<tr><td>経度</td><td>'   + gProp[i]["経度"]   + '</td></tr>';
+	html += '<tr><td>人口</td><td>'   + gProp[i]["人口"]   + '人</td></tr>';
+	html += '<tr><td>世帯</td><td>'   + gProp[i]["世帯"]   + '</td></tr>';
+	html += '</table></div>';
+	return html;
+  //$("#info").html(html);
+}
+
+function dispPoly(polyCoords){
+	var selp;
+	/*
+	for(i = 0; i < form1.ptype.length; i++) 	//全てのラジオボタンをスキャン 
+		if(form1.ptype[i].checked) { 						//チェックされていたら 
+		selp = parseInt(form1.ptype[i].value);	//それが基数 
+		break; 
+ 	}
+ 	*/
+ 	selp = $("input[type=radio]:checked").val();
+	if (selp == 1){	//ポリゴン
+	  adminArea = new google.maps.Polygon({
+	    paths: polyCoords,
+	    strokeColor: '#FF0000',
+	    strokeOpacity: 0.8,
+	    strokeWeight: 3,
+	    fillColor: '#FF0000',
+	    fillOpacity: 0.35
+	  });
+  	adminArea.setMap(map);
+  	sArea.push(adminArea);
+	}else{					//ポリライン
+	  adminLine = new google.maps.Polyline({
+	    path: polyCoords,
+	    strokeColor: "#FF0000",
+	    strokeOpacity: 0.8,
+	    strokeWeight: 3
+	  });
+		adminLine.setMap(map);
+  	sLine.push(adminLine);
+	}
+	//ズームの自動設定
+	map.fitBounds(bounds);
+}
+// リセット処理
+function clear() {
+	$("#info").html('');
+  if (markers) {
+  	for(var i = 0; i < markers.length; i++){
+    	markers[i].setMap(null);
+    }
+  }
+  if (currentInfoWindow) {
+	  currentInfoWindow.close();
+  }
+	if (sArea) {
+		var area
+		while (area = sArea.pop()) {
+			area.setMap(null);
+		}
+	}
+	// ライン削除
+	if (sLine) {
+		for(var i = 0; i < sLine.length; i++){
+			sLine[i].setMap(null);
+		}
+	}
+}
+function infoClose(){
+  if (currentInfoWindow) {
+	  currentInfoWindow.close();
+  }
+}
+</script>
+</head>
+<!--<body onload="initialize()">-->
+<body>
+
+<h1>GISデータ検証用地図</h1>
+
+<div id="container">
+
+<div style="width:260px;float:right;padding:0 0 0 10px;">
+<form name="form1">
+<p>
+<input type="radio" name="ptype" value="1" />ポリゴン
+<input type="radio" name="ptype" value="2" checked/>ポリライン
+</p>
+<table>
+<tr>
+<td>都道府県</td><td><select id="pref"><option value="00" selected>--選択--</option></select></td>
+</tr>
+<tr>
+<td>市区町村</td><td><select id="city"><option value="00" selected>--選択--</option></select></td>
+</tr>
+<tr>
+<td>街区</td><td><select id="gaiku"><option value="00" selected>--選択--</option></select></td>
+</tr>
+<tr>
+<td><input type="button" value="描画" onclick="loadGPS()" /></td>
+<td><input type="button" value="描画削除" onclick="clear()" /></td>
+</tr>
+</table>
+</form>
+<div id="info"></div>
+
+</div><!-- //float right box -->
+
+<div id="map_canvas" style="border: 1px solid black; height: 90%;"></div>
+</div><!-- //container -->
+
+<span id="mode"></span>
+</body>
+</html>
